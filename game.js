@@ -7,7 +7,7 @@ const config = {
     physics: {
         default: 'arcade',
         arcade: {
-            gravity: { y: 600 },
+            gravity: { y: 800 },
             debug: false
         }
     },
@@ -25,86 +25,115 @@ const config = {
 const game = new Phaser.Game(config);
 
 let player;
+let platforms;
 let cursors;
-let leftBtn, rightBtn, jumpBtn;
 let isLeftDown = false;
 let isRightDown = false;
 let isJumpDown = false;
 
-function preload() {}
-
-function create() {
-    const tg = window.Telegram.WebApp;
-    tg.expand();
-    tg.ready();
+function preload() {
+    // Создаём текстуры программно (без внешних файлов)
+    const graphics = this.make.graphics({ x: 0, y: 0, add: false });
     
-    const user = tg.initDataUnsafe?.user;
-    const username = user ? user.first_name : 'Гость';
+    // Игрок — зелёный квадрат
+    graphics.fillStyle(0x00ff00, 1);
+    graphics.fillRect(0, 0, 32, 32);
+    graphics.generateTexture('player', 32, 32);
+    graphics.clear();
     
-    this.add.text(this.scale.width / 2, 30, 'CubeQuest - Привет, ' + username + '!', {
-        fontSize: '20px',
-        fill: '#fff',
-        fontFamily: 'Arial'
-    }).setOrigin(0.5);
+    // Платформа — коричневый прямоугольник
+    graphics.fillStyle(0x8B4513, 1);
+    graphics.fillRect(0, 0, 400, 32);
+    graphics.generateTexture('platform', 400, 32);
+    graphics.clear();
     
-    player = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, 40, 60, 0xFF6B6B);
-    this.physics.add.existing(player);
-    player.body.setCollideWorldBounds(true);
-    
-    const groundY = this.scale.height - 30;
-    const ground = this.add.rectangle(this.scale.width / 2, groundY, this.scale.width, 60, 0x4ECDC4);
-    this.physics.add.existing(ground, true);
-    this.physics.add.collider(player, ground);
-    
-    if (!this.sys.game.device.os.desktop) {
-        createMobileControls(this);
-    } else {
-        cursors = this.input.keyboard.createCursorKeys();
-    }
-    
-    this.scale.on('resize', resize, this);
+    // Монета — жёлтый круг
+    graphics.fillStyle(0xFFD700, 1);
+    graphics.fillCircle(10, 10, 10);
+    graphics.generateTexture('coin', 20, 20);
 }
 
-function createMobileControls(scene) {
-    const btnSize = 60;
-    const padding = 20;
-    const bottomY = scene.scale.height - 100;
+function create() {
+    // Платформы
+    platforms = this.physics.add.staticGroup();
     
-    leftBtn = scene.add.circle(padding + btnSize/2, bottomY, btnSize/2, 0x000000, 0.5);
-    leftBtn.setInteractive();
-    leftBtn.on('pointerdown', () => isLeftDown = true);
-    leftBtn.on('pointerup', () => isLeftDown = false);
-    leftBtn.on('pointerout', () => isLeftDown = false);
-    scene.add.text(leftBtn.x, leftBtn.y, '←', { fontSize: '30px', fill: '#fff' }).setOrigin(0.5);
+    // Пол
+    platforms.create(window.innerWidth / 2, window.innerHeight - 30, 'platform')
+        .setScale(window.innerWidth / 400, 1).refreshBody();
     
-    rightBtn = scene.add.circle(padding + btnSize * 1.8, bottomY, btnSize/2, 0x000000, 0.5);
-    rightBtn.setInteractive();
-    rightBtn.on('pointerdown', () => isRightDown = true);
-    rightBtn.on('pointerup', () => isRightDown = false);
-    rightBtn.on('pointerout', () => isRightDown = false);
-    scene.add.text(rightBtn.x, rightBtn.y, '→', { fontSize: '30px', fill: '#fff' }).setOrigin(0.5);
+    // Платформы в воздухе
+    platforms.create(window.innerWidth * 0.25, window.innerHeight * 0.7, 'platform')
+        .setScale(0.5, 1).refreshBody();
+    platforms.create(window.innerWidth * 0.75, window.innerHeight * 0.5, 'platform')
+        .setScale(0.5, 1).refreshBody();
+    platforms.create(window.innerWidth * 0.5, window.innerHeight * 0.3, 'platform')
+        .setScale(0.5, 1).refreshBody();
     
-    jumpBtn = scene.add.circle(scene.scale.width - padding - btnSize/2, bottomY, btnSize/2, 0x000000, 0.5);
-    jumpBtn.setInteractive();
-    jumpBtn.on('pointerdown', () => isJumpDown = true);
-    jumpBtn.on('pointerup', () => isJumpDown = false);
-    jumpBtn.on('pointerout', () => isJumpDown = false);
-    scene.add.text(jumpBtn.x, jumpBtn.y, '↑', { fontSize: '30px', fill: '#fff' }).setOrigin(0.5);
+    // Игрок
+    player = this.physics.add.sprite(100, window.innerHeight - 100, 'player');
+    player.setBounce(0.1);
+    player.setCollideWorldBounds(true);
+    
+    // Коллизии
+    this.physics.add.collider(player, platforms);
+    
+    // Камера следует за игроком
+    this.cameras.main.startFollow(player);
+    this.cameras.main.setBounds(0, 0, window.innerWidth, window.innerHeight);
+    
+    // Управление
+    cursors = this.input.keyboard.createCursorKeys();
+    
+    // Тач-управление для мобилы
+    this.input.on('pointerdown', (pointer) => {
+        if (pointer.x < window.innerWidth / 3) isLeftDown = true;
+        else if (pointer.x > window.innerWidth * 2 / 3) isRightDown = true;
+        else isJumpDown = true;
+    });
+    
+    this.input.on('pointerup', () => {
+        isLeftDown = false;
+        isRightDown = false;
+        isJumpDown = false;
+    });
+    
+    // Score
+    this.score = 0;
+    this.scoreText = this.add.text(16, 16, 'Score: 0', { 
+        fontSize: '32px', 
+        fill: '#000',
+        fontFamily: 'Arial'
+    }).setScrollFactor(0);
+    
+    // Монеты
+    this.coins = this.physics.add.group({
+        key: 'coin',
+        repeat: 5,
+        setXY: { x: 200, y: 0, stepX: 150 }
+    });
+    
+    this.coins.children.iterate((child) => {
+        child.setBounceY(Phaser.Math.FloatBetween(0.4, 0.8));
+        child.setCollideWorldBounds(true);
+    });
+    
+    this.physics.add.collider(this.coins, platforms);
+    this.physics.add.overlap(player, this.coins, collectCoin, null, this);
 }
 
 function update() {
     const speed = 200;
-    const jumpSpeed = 330;
+    const jumpSpeed = 500;
     let velocityX = 0;
     
-    if (cursors) {
-        if (cursors.left.isDown) velocityX = -speed;
-        if (cursors.right.isDown) velocityX = speed;
-        if (cursors.space.isDown && player.body.touching.down) {
-            player.body.setVelocityY(-jumpSpeed);
-        }
+    // Клавиатура
+    if (cursors.left.isDown) velocityX = -speed;
+    if (cursors.right.isDown) velocityX = speed;
+    if (cursors.space.isDown && player.body.touching.down) {
+        player.body.setVelocityY(-jumpSpeed);
     }
     
+    // Тач
     if (isLeftDown) velocityX = -speed;
     if (isRightDown) velocityX = speed;
     if (isJumpDown && player.body.touching.down) {
@@ -113,6 +142,12 @@ function update() {
     }
     
     player.body.setVelocityX(velocityX);
+}
+
+function collectCoin(player, coin) {
+    coin.disableBody(true, true);
+    this.score += 10;
+    this.scoreText.setText('Score: ' + this.score);
 }
 
 function resize(gameSize) {
