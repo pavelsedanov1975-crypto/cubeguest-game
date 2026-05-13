@@ -7,7 +7,7 @@ const config = {
     physics: {
         default: 'arcade',
         arcade: {
-            gravity: { y: 600 },  // уменьшил гравитацию
+            gravity: { y: 800 },
             debug: false
         }
     },
@@ -23,26 +23,24 @@ const game = new Phaser.Game(config);
 let player;
 let platforms;
 let cursors;
-let isLeftDown = false;
-let isRightDown = false;
-let isJumpDown = false;
+let wasd;
 
 function preload() {
-    const graphics = this.make.graphics({ x: 0, y: 0, add: false });
+    const g = this.make.graphics({ add: false });
     
-    graphics.fillStyle(0x00ff00, 1);
-    graphics.fillRect(0, 0, 32, 32);
-    graphics.generateTexture('player', 32, 32);
-    graphics.clear();
+    g.fillStyle(0x00ff00, 1);
+    g.fillRect(0, 0, 32, 32);
+    g.generateTexture('player', 32, 32);
+    g.clear();
     
-    graphics.fillStyle(0x8B4513, 1);
-    graphics.fillRect(0, 0, 400, 32);
-    graphics.generateTexture('platform', 400, 32);
-    graphics.clear();
+    g.fillStyle(0x8B4513, 1);
+    g.fillRect(0, 0, 200, 20);
+    g.generateTexture('platform', 200, 20);
+    g.clear();
     
-    graphics.fillStyle(0xFFD700, 1);
-    graphics.fillCircle(10, 10, 10);
-    graphics.generateTexture('coin', 20, 20);
+    g.fillStyle(0xFFD700, 1);
+    g.fillCircle(8, 8, 8);
+    g.generateTexture('coin', 16, 16);
 }
 
 function create() {
@@ -51,108 +49,108 @@ function create() {
     
     platforms = this.physics.add.staticGroup();
     
-    // Пол — широкий
-    const ground = platforms.create(w / 2, h - 20, 'platform');
-    ground.setScale(w / 200, 1).refreshBody();
+    // Пол
+    platforms.create(w/2, h-15, 'platform').setScale(w/100, 1).refreshBody();
     
-    // Платформы ближе друг к другу и ниже
-    platforms.create(w * 0.3, h * 0.75, 'platform').setScale(0.4, 1).refreshBody();
-    platforms.create(w * 0.7, h * 0.6, 'platform').setScale(0.4, 1).refreshBody();
-    platforms.create(w * 0.5, h * 0.45, 'platform').setScale(0.4, 1).refreshBody();
-    platforms.create(w * 0.2, h * 0.3, 'platform').setScale(0.4, 1).refreshBody();
-    platforms.create(w * 0.8, h * 0.3, 'platform').setScale(0.4, 1).refreshBody();
+    // Платформы — лесенка, близко друг к другу
+    const steps = [
+        [w*0.2, h*0.82],
+        [w*0.5, h*0.72],
+        [w*0.8, h*0.62],
+        [w*0.5, h*0.52],
+        [w*0.2, h*0.42],
+        [w*0.5, h*0.32]
+    ];
     
-    // Игрок — старт на полу, по центру
-    player = this.physics.add.sprite(w / 2, h - 80, 'player');
+    steps.forEach(([x, y]) => {
+        platforms.create(x, y, 'platform').setScale(0.6, 1).refreshBody();
+    });
+    
+    // Игрок
+    player = this.physics.add.sprite(w*0.1, h-60, 'player');
     player.setBounce(0.1);
     player.setCollideWorldBounds(true);
+    player.body.setMaxVelocity(300, 600);
     
     this.physics.add.collider(player, platforms);
     
-    // Камера — НЕ следует за игроком, статичный мир
-    this.cameras.main.setBounds(0, 0, w, h);
-    this.physics.world.setBounds(0, 0, w, h);
-    
-    // Клавиатура
+    // Клавиатура — стрелки + WASD
     cursors = this.input.keyboard.createCursorKeys();
+    wasd = this.input.keyboard.addKeys({
+        up: Phaser.Input.Keyboard.KeyCodes.W,
+        left: Phaser.Input.Keyboard.KeyCodes.A,
+        down: Phaser.Input.Keyboard.KeyCodes.S,
+        right: Phaser.Input.Keyboard.KeyCodes.D,
+        jump: Phaser.Input.Keyboard.KeyCodes.SPACE
+    });
     
-    // Тач — чёткие зоны
-    this.input.on('pointerdown', (pointer) => {
-        const x = pointer.x;
-        const zoneWidth = w / 3;
-        
-        if (x < zoneWidth) {
-            isLeftDown = true;
-            isRightDown = false;
-        } else if (x > zoneWidth * 2) {
-            isRightDown = true;
-            isLeftDown = false;
-        } else {
-            isJumpDown = true;
+    // Монеты
+    this.coins = this.physics.add.group();
+    steps.forEach(([x, y]) => {
+        const coin = this.coins.create(x, y-25, 'coin');
+        coin.setBounceY(0.3);
+    });
+    this.physics.add.collider(this.coins, platforms);
+    this.physics.add.overlap(player, this.coins, (p, c) => {
+        c.disableBody(true, true);
+    });
+    
+    // Тач — виртуальные кнопки
+    this.add.rectangle(80, h-80, 120, 120, 0x000000, 0.3).setScrollFactor(0);
+    this.add.rectangle(w-80, h-80, 120, 120, 0x000000, 0.3).setScrollFactor(0);
+    this.add.circle(w/2, h-80, 50, 0x000000, 0.3).setScrollFactor(0);
+    
+    this.add.text(80, h-80, '←', {fontSize:'40px'}).setOrigin(0.5).setScrollFactor(0);
+    this.add.text(w-80, h-80, '→', {fontSize:'40px'}).setOrigin(0.5).setScrollFactor(0);
+    this.add.text(w/2, h-80, '↑', {fontSize:'40px'}).setOrigin(0.5).setScrollFactor(0);
+    
+    // Тач зоны
+    this.input.on('pointerdown', (p) => {
+        const x = p.x, y = p.y;
+        if (y > h-140) {
+            if (x < w/3) this.touchLeft = true;
+            else if (x > w*2/3) this.touchRight = true;
+            else this.touchJump = true;
         }
     });
-    
     this.input.on('pointerup', () => {
-        isLeftDown = false;
-        isRightDown = false;
-        isJumpDown = false;
+        this.touchLeft = this.touchRight = this.touchJump = false;
     });
     
-    // Score
-    this.score = 0;
-    this.scoreText = this.add.text(16, 16, 'Score: 0', { 
-        fontSize: '24px', 
-        fill: '#000',
-        fontFamily: 'Arial'
-    });
-    
-    // Монеты на платформах
-    this.coins = this.physics.add.group();
-    
-    const coinPositions = [
-        { x: w * 0.3, y: h * 0.75 - 30 },
-        { x: w * 0.7, y: h * 0.6 - 30 },
-        { x: w * 0.5, y: h * 0.45 - 30 },
-        { x: w * 0.2, y: h * 0.3 - 30 },
-        { x: w * 0.8, y: h * 0.3 - 30 }
-    ];
-    
-    coinPositions.forEach(pos => {
-        const coin = this.coins.create(pos.x, pos.y, 'coin');
-        coin.setBounceY(0.5);
-    });
-    
-    this.physics.add.collider(this.coins, platforms);
-    this.physics.add.overlap(player, this.coins, collectCoin, null, this);
+    this.touchLeft = this.touchRight = this.touchJump = false;
 }
 
 function update() {
-    const speed = 250;        // увеличил скорость
-    const jumpSpeed = 450;    // увеличил прыжок
-    let velocityX = 0;
+    const speed = 200;
+    const jumpSpeed = 420;
+    const airControl = 0.6; // контроль в воздухе (0-1)
     
-    // Клавиатура — чётко
-    if (cursors.left.isDown) velocityX = -speed;
-    if (cursors.right.isDown) velocityX = speed;
+    let vx = 0;
+    const onGround = player.body.touching.down;
     
-    // Прыжок — только когда на земле
-    if ((cursors.space.isDown || cursors.up.isDown) && player.body.touching.down) {
-        player.setVelocityY(-jumpSpeed);
+    // Ввод
+    const left = cursors.left.isDown || wasd.left.isDown || this.touchLeft;
+    const right = cursors.right.isDown || wasd.right.isDown || this.touchRight;
+    const jump = cursors.up.isDown || cursors.space.isDown || wasd.jump.isDown || wasd.up.isDown || this.touchJump;
+    
+    // Горизонтальное движение
+    if (left) vx = -speed;
+    if (right) vx = speed;
+    
+    // В воздухе — меньший контроль, но можно менять направление
+    if (!onGround) {
+        if (left || right) {
+            vx *= airControl;
+        } else {
+            // Если не жмём — сохраняем инерцию (как в Марио)
+            vx = player.body.velocity.x * 0.98;
+        }
     }
     
-    // Тач
-    if (isLeftDown) velocityX = -speed;
-    if (isRightDown) velocityX = speed;
-    if (isJumpDown && player.body.touching.down) {
-        player.setVelocityY(-jumpSpeed);
-        isJumpDown = false;
-    }
+    player.setVelocityX(vx);
     
-    player.setVelocityX(velocityX);
-}
-
-function collectCoin(player, coin) {
-    coin.disableBody(true, true);
-    this.score += 10;
-    this.scoreText.setText('Score: ' + this.score);
+    // Прыжок — только с земли
+    if (jump && onGround) {
+        player.setVelocityY(-jumpSpeed);
+    }
 }
